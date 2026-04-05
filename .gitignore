@@ -1,2 +1,5 @@
 .env
 node_modules
+# Postman
+.postman/
+postman/
