@@ -1,7 +1,7 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import {User} from "../models/user.model.js"
-import {uploadOnCloudinary} from "../utils/cloudinary.js"
+import {uploadOnCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken"
 // since many times we need to generate access token and refresh token together, so we create a method for it
@@ -281,6 +281,8 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Avatar file is missing.")
   }
 
+  //TODO: delete old image
+  const oldAvatar = req.user?.avatar
   const avatar = await uploadOnCloudinary(avatarLocalPath)
 
   if (!avatar.url) {
@@ -297,6 +299,10 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     {new: true}
   ).select("-password")
 
+  //call the old avatar delete function
+  if (oldAvatar) {
+    await deleteFromCloudinary(oldAvatar)
+  }
   return res
     .status(200)
     .json(new ApiResponse(200, user, "Avatar updated successfuly."))
@@ -309,6 +315,8 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Cover image file is missing.")
   }
 
+  //TODO: delete old image : utility function
+  const oldCoverImage = req.user?.coverImage
   const coverImage = await uploadOnCloudinary(coverImageLocalPath)
 
   if (!coverImage.url) {
@@ -325,6 +333,10 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     {new: true}
   ).select("-password")
 
+  // call the old image delete utility function
+  if (oldCoverImage) {
+    await deleteFromCloudinary(oldCoverImage)
+  }
   return res
     .status(200)
     .json(new ApiResponse(200, user, "Cover image updated successfuly."))
