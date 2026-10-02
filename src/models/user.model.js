@@ -49,11 +49,11 @@ const userSchema = new Schema(
     }
 )
 
-userSchema.pre("save", async function (next) {
-    if(!this.isModified("password")) return next();
+userSchema.pre("save", async function () { //removed next as it has conflict with async/await.
+                                           // the other option was to keep next and remove async/await.
+    if(!this.isModified("password")) return; // removed return next()
 
-    this.password = bcrypt.hash(this.password, 10)
-    next()
+  this.password = await bcrypt.hash(this.password, 10); //removed next() from here.
 })
 
 userSchema.methods.isPasswordCorrect = async function (password){
