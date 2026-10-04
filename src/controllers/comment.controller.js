@@ -3,6 +3,7 @@ import {Comment} from "../models/comment.model.js"
 import {ApiError} from "../utils/ApiError.js"
 import {ApiResponse} from "../utils/ApiResponse.js"
 import {asyncHandler} from "../utils/asyncHandler.js"
+import {Video} from "../models/video.model.js"
 
 const getVideoComments = asyncHandler(async (req, res) => {
     //TODO: get all comments for a video
@@ -17,10 +18,14 @@ const getVideoComments = asyncHandler(async (req, res) => {
   if (!videoId?.trim()) {
     throw new ApiError(400, "Video ID is missing.")
   }
-  const pageNumber = parseInt(page, 1)
-  const limitNumber = parseInt(limit, 10)
+  const pageNumber = parseInt(page, 10) //dont confuse 10 with default value, it is the base of the number sys.
+  const limitNumber = parseInt(limit, 10) // same, 10 is the base of the number system.
   const skip = (pageNumber - 1) * limitNumber
-
+  // console.log("THE VALUE OF SKIP IS:")
+  // console.log(skip)
+  // console.log("THE VALUE OF VIDEO ID IS:")
+  // console.log(videoId)
+//////////// FIX THIS: getVideoComments should throw error for a video that does not exist ///////////////
   const comments = await Comment.aggregate([
     {
       $match  : {
@@ -77,11 +82,16 @@ const addComment = asyncHandler(async (req, res) => {
   if (!videoId?.trim()) {
     throw new ApiError(400, "Video id is missing.")
   }
-  const { content } = req.body()
+  const { content } = req.body
 
   if (!content?.trim()) {
     throw new ApiError(400, "Content is required.")
   }
+  //commented these for temp testing purpose.
+  // const video = await Video.findById(videoId)
+  // if (!video) {
+  //   throw new ApiError(404, "Video does not exist.")
+  // }
 
   const comment = await Comment.create({
     content, // shorthand for content: content
@@ -93,7 +103,7 @@ const addComment = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, comment, "Comment added successfuly."))
 })
-
+//commented the check videoid exists for temporary testing. TO DO: remove comment.
 const updateComment = asyncHandler(async (req, res) => {
     // TODO: update a comment
   const { commentId } = req.params
