@@ -60,18 +60,21 @@ const registerUser =  asyncHandler( async (req, res) => {
     //                        // it gives, etc. things should be understood by printing them.
 
     //4.
-    const avatarLocalPath = req.files?.avatar[0]?.path
+    const avatarLocalPath = req.files?.avatar?.[0]?.path
     // const coverImageLocalPath = req.files?.coverImage[0]?.path // this line was commented for below reason
     // if avatar is not there, we are checking immediately, but we are not checking same for coverImage.
     // if we dont post coverImage, then JS will throw
     // TypeError: Cannot read properties of undefined (reading '0').
     // A classic solution to resolve it :
-    let coverImageLocalPath
-    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
-       coverImageLocalPath = req.files.coverImage[0].path;
-      //now if cover image file is not added, it will not throw error, and instead take is as empty string
-      // in the response : "coverImage"
-    }
+    //option A:
+    //let coverImageLocalPath
+    //if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
+    //   coverImageLocalPath = req.files.coverImage[0].path;
+    // }
+    //now if cover image file is not added, it will not throw error, and instead take is as empty string
+    // in the response : "coverImage"
+    //option B:
+    const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
     if(!avatarLocalPath){
         throw new ApiError(400, "Avatar is required")
     }
@@ -82,7 +85,7 @@ const registerUser =  asyncHandler( async (req, res) => {
 
     //6.
     if(!avatar){
-        throw new ApiError(400, "Avatar file is required")
+        throw new ApiError(400, "Unable to upload Avatar file.")
     }
 
     //7.
