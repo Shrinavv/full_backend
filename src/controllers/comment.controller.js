@@ -5,6 +5,14 @@ import {ApiResponse} from "../utils/ApiResponse.js"
 import {asyncHandler} from "../utils/asyncHandler.js"
 import {Video} from "../models/video.model.js"
 
+// NOTE: for now, the videoSchema does not have a field to hold number of comments, or reply
+// to comments, so we are not handling replyToComment, which would require commentId.
+// in the cases of addComment being succesful, we are not handling the part of incrementing the
+// count of comment present in videoSchema. Similarly, to maintain the counting of replies for a comment,
+// if and when the replyToComment would be added, we would have to add a field in commentSchema
+// -> reply: Number, default: 0 (most likely)
+// which should be incremented when replyToComment is succesful.
+
 const getVideoComments = asyncHandler(async (req, res) => {
     //TODO: get all comments for a video
     // 1. verify sign in -> verifyJWT (done in routes)
@@ -25,13 +33,19 @@ const getVideoComments = asyncHandler(async (req, res) => {
   // console.log(skip)
   // console.log("THE VALUE OF VIDEO ID IS:")
   // console.log(videoId)
-//////////// FIX THIS: getVideoComments should throw error for a video that does not exist ///////////////
+      // TODO: sorting criteria is not asked by user, and it is hard coded based on createdAt, so implement
+      // sorting criteria.
   const comments = await Comment.aggregate([
     {
       $match  : {
         //_id: videoId -> wrong approach, because _id is the id of this comment document.
         // comparing it with videoId is obsolete.
         video: new mongoose.Types.ObjectId(videoId)
+      }
+    },
+    {
+      $sort: {
+        createdAt: -1 // Show newest comments first
       }
     },
     {
@@ -66,7 +80,12 @@ const getVideoComments = asyncHandler(async (req, res) => {
     {
       $limit: limitNumber
     }
-  ]);
+  ])
+
+  //fixed : if video id does not exist, throw error.
+  if (!comments?.length) {
+    throw new ApiError(404, "Video does not exist.")
+  }
 
   return res
     .status(200)
@@ -87,11 +106,10 @@ const addComment = asyncHandler(async (req, res) => {
   if (!content?.trim()) {
     throw new ApiError(400, "Content is required.")
   }
-  //commented these for temp testing purpose.
-  // const video = await Video.findById(videoId)
-  // if (!video) {
-  //   throw new ApiError(404, "Video does not exist.")
-  // }
+  const video = await Video.findById(videoId)
+  if (!video) {
+    throw new ApiError(404, "Video does not exist.")
+  }
 
   const comment = await Comment.create({
     content, // shorthand for content: content
@@ -103,7 +121,7 @@ const addComment = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, comment, "Comment added successfuly."))
 })
-//commented the check videoid exists for temporary testing. TO DO: remove comment.
+
 const updateComment = asyncHandler(async (req, res) => {
     // TODO: update a comment
   const { commentId } = req.params
@@ -144,6 +162,11 @@ const deleteComment = asyncHandler(async (req, res) => {
   if (!commentId?.trim()) {
     throw new ApiError(400, "Comment ID is missing in URI.")
   }
+
+  if (!isValidObjectId(commentId)) {
+      throw new ApiError(400, "Invalid Comment ID format.");
+  }
+
   const comment = await Comment.findById(commentId)
 
   if (!comment) {

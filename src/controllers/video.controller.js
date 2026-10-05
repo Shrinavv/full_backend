@@ -37,12 +37,19 @@ const getAllVideos = asyncHandler(async (req, res) => {
   }
 
     // Optional: Only fetch published videos
+  // CASE: if channelId is given in request, and it belongs to the logged in user, then irrespective of
+  // isPublished, we should show all the videos made by the user, which is NOT handled here.
+
   matchConditions.isPublished = true;
 
     // 3. build sort options
     // validating sort fields given in request URI.
   const allowedSortFields = ["createdAt", "views", "duration", "title"]
   let sortField = sortBy
+  // we are providing services that can be sorted only based on allowedSortFields. our backend
+  // handles the case when sortBy is not passed, so by default sorting will be wrt createdAt
+  // if frontend adds a feature of sorting which is not supported by the backend, backend will
+  // throw below error, indicating frontend that backend can not provide service for this feature.
   if (!allowedSortFields.includes(sortBy)) {
     // Option A: Throw an error
     throw new ApiError(400, `Invalid sort field. Allowed fields are: ${allowedSortFields.join(", ")}`)
@@ -79,7 +86,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
         from: "users",
         localField: "owner",
         foreignField: "_id",
-        as: "ownerDetails",
+        as: "publishedBy",
         pipeline: [
           {
             $project: {
@@ -92,8 +99,8 @@ const getAllVideos = asyncHandler(async (req, res) => {
     },
     {
       $addFields: {
-        ownerDetails: {
-          $first: "$ownerDetails"
+        publishedBy: {
+          $first: "publishedBy"
         }
       }
     }
@@ -117,9 +124,15 @@ const publishAVideo = asyncHandler(async (req, res) => {
   if(!videoLocalPath || !thumbnailLocalPath){
       throw new ApiError(400, "Both video and thumbnail is required.")
   }
+  // NOTE: currently we are not checking the extension of the file uploaded, so, one can publish a
+  // video but it would have videoFile as a .txt, which would instead be a text file, and therefore
+  // should not have had been uploaded but gets uploaded, now this is a serious problem, as
+  // our service provides duration. In cloudinary, .duration for a txt file can yield serious problem.
+  // Similarly we should handle the case with the thumbnail.
 
   const videoFile = await uploadOnCloudinary(videoLocalPath)
   const thumbnailFile = await uploadOnCloudinary(thumbnailLocalPath)
+
   if (!videoFile) {
     throw new ApiError(400, "Unable to upload the video to cloudinary.")
   }
@@ -146,23 +159,162 @@ const publishAVideo = asyncHandler(async (req, res) => {
 })
 
 const getVideoById = asyncHandler(async (req, res) => {
-    const { videoId } = req.params
     //TODO: get video by id
-})
+  const { videoId } = req.params
 
+  if (!videoId?.trim()) {
+    throw new ApiError(400, "Video ID is missing.")
+  }
+
+  // 1. Check if the provided string is a valid MongoDB ObjectId
+  if (!isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid video ID format.");
+  }
+
+  // 2. Query the database to see if the video exists
+  const video = await Video.findById(videoId).populate({
+    path: "owner",
+    select: "username avatar" // Only select the fields you need
+  });
+
+  if (!video) {
+    throw new ApiError(404, "Video does not exist.");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, video, "Video fetched successfully."));
+
+})
+// TRY: to make use of aggregate instead of populate in getVideoById, for testing which is better.
 const updateVideo = asyncHandler(async (req, res) => {
-    const { videoId } = req.params
     //TODO: update video details like title, description, thumbnail
+
+  const { videoId } = req.params
+  if (!videoId?.trim()) {
+    throw new ApiError(400, "Video ID is missing in the URI.")
+  }
+
+  if (!isValidObjectId(videoId)) {
+      throw new ApiError(400, "Invalid Video ID format.");
+  }
+
+  const { title, description } = req.body
+  const thumbnailLocalPath = req.file?.path
+
+  if (!title?.trim() && !description?.trim() && !thumbnailLocalPath) {
+    throw new ApiError(400, "Atleast one field (title, description, or thumbnail) is required.")
+  }
+
+  const video = await Video.findById(videoId)
+
+  if (!video) {
+    throw new ApiError(404, "Video ID does not exist.")
+  }
+
+  if (video.owner.toString() !== req.user?._id.toString()) {
+    throw new ApiError(403, "You do not have permission to update this video.")
+    //video can only be updated by the owner of the video.
+  }
+  if (title?.trim()) {
+    video.title = title.trim()
+  }
+  if (description?.trim()) {
+    video.description = description.trim()
+  }
+
+  if (thumbnailLocalPath) {
+    const oldThumbnail = video.thumbnail
+    const newThumbnail = await uploadOnCloudinary(thumbnailLocalPath)
+
+    if (!newThumbnail?.url) {
+      throw new ApiError(400, "Error while uploading new thumbnail to cloudinary.")
+    }
+
+    video.thumbnail = newThumbnail.url
+
+    //call the old thumbnail delete function
+    // NOTE: does not handle the error while deleting the thumbnail from cloudinary.
+    if (oldThumbnail) {
+      await deleteFromCloudinary(oldThumbnail)
+    }
+  }
+
+  await video.save()
+
+  return res
+      .status(200)
+      .json(new ApiResponse(200, video, "Video updated successfully."))
 
 })
 
 const deleteVideo = asyncHandler(async (req, res) => {
-    const { videoId } = req.params
     //TODO: delete video
+  const { videoId } = req.params
+  if (!videoId?.trim()) {
+    throw new ApiError(400, "Video ID is missing in the URI.")
+  }
+
+  if (!isValidObjectId(videoId)) {
+      throw new ApiError(400, "Invalid Video ID format.");
+  }
+
+  const video = await Video.findById(videoId)
+
+  if (!video) {
+    throw new ApiError(404, "Video ID does not exist.")
+  }
+
+  if (video.owner.toString() !== req.user?._id.toString()) {
+    throw new ApiError(403, "You do not have permission to delete this video.")
+    //video can only be deleted by the owner of the video.
+  }
+  // TODO: try catch to handle these :
+  await deleteFromCloudinary(video.thumbnail)
+  await deleteFromCloudinary(video.videoFile, "video")
+
+  await video.deleteOne()
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200), "Video deleted successfuly.")
+
 })
 
 const togglePublishStatus = asyncHandler(async (req, res) => {
-    const { videoId } = req.params
+  const { videoId } = req.params
+
+  if (!videoId?.trim()) {
+    throw new ApiError(400, "Video ID is missing in the URI.")
+  }
+
+  if (!isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid Video ID format.")
+  }
+
+  const video = await Video.findById(videoId)
+
+  if (!video) {
+    throw new ApiError(404, "Video does not exist.")
+  }
+
+  if (video.owner.toString() !== req.user?._id.toString()) {
+    throw new ApiError(403, "You do not have permission to toggle publish status for this video.")
+  }
+
+    // Toggle the boolean value
+  video.isPublished = !video.isPublished
+
+  await video.save({ validateBeforeSave: false })
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200,
+        { isPublished: video.isPublished },
+        `Video publish status changed to ${video.isPublished ? "Published" : "Unpublished"} successfully.`
+      )
+    )
 })
 
 export {
